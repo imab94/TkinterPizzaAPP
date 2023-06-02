@@ -4,6 +4,13 @@ import ttkbootstrap.dialogs
 from ttkbootstrap.constants import *
 from ttkbootstrap.tooltip import ToolTip
 from ttkbootstrap.tableview import Tableview
+from fpdf import FPDF
+import datetime
+import qrcode
+from PIL import ImageTk, Image
+import webbrowser
+import tkinter as tk
+
 
 
 # Pizza menu
@@ -82,8 +89,94 @@ def on_size_selected(event):
             break
 
 orders = []
+receiptListOrders = []
+
 global total_collection_value
 total_collection_value = 0.0
+
+def print_receipt():
+    # receipt_window = ttk.Window(themename="litera")
+    receipt_window = tk.Tk()
+    receipt_window.title("Receipt")
+
+    print_receiptLabel = tk.Label(receipt_window, text="Receipt Invoice", font=("Times New Roman", 15, 'bold'))
+    print_receiptLabel.pack(padx=50, pady=10)
+
+    receipt_text = tk.Text(receipt_window, state="normal", font=("Times New Roman", 12), height=20, width=40)
+    receipt_text.pack(pady=10)
+
+    # Print order details in the receipt
+    for k in receiptListOrders:
+        for order in k:
+            receipt_text.insert("end", f"Pizza Name: {order[0]}\n")
+            receipt_text.insert("end", f"Size: {order[1]}\n")
+            receipt_text.insert("end", f"Price: {order[2]}\n")
+            receipt_text.insert("end", f"Toppings: {order[3]}\n")
+            receipt_text.insert("end", f"GST (18%): {order[4]}\n")
+            receipt_text.insert("end", f"Offer: {order[5]}\n")
+            receipt_text.insert("end", f"Total Amount: {order[6]}\n")
+            receipt_text.insert("end", "\n\n")
+
+    receipt_text.configure(state="disabled")
+
+    def download_pdf():
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Helvetica", size=10)
+            # Add current date and time in the top right corner
+            today_date = datetime.date.today().strftime("%Y-%m-%d")
+            current_time = datetime.datetime.now().strftime("%H:%M:%S")
+            pdf.cell(0, 6, txt="{},{}".format(today_date, current_time), ln=True, align="R")
+
+            pdf.set_font("Helvetica", size=24)
+            # Add Receipt Invoice text in the center
+            pdf.cell(0, 10, txt="Receipt Invoice", ln=True, align="C")
+            receipt_text_content = receipt_text.get("1.0", "end-1c")
+
+            pdf.set_font("Helvetica", size=10)
+            for line in receipt_text_content.split("\n"):
+                pdf.cell(0, 14, txt=line, ln=True,align="C")
+
+            # Add total payable amount and total of pizza prices after GST
+            total_payable_amount = sum(float(order[0][6]) for order in receiptListOrders)
+            total_pizza_price_after_gst = sum(float(order[0][2]) + float(order[0][4]) for order in receiptListOrders)
+
+            pdf.cell(0, 16, txt="Total Payable Amount: {:.2f} rs.".format(total_payable_amount), ln=True, align="R")
+            # Generate QR code for payment
+            qr = qrcode.QRCode(version=1, box_size=10, border=4)
+            payment_details = "Amount: {:.2f} rs.".format(total_payable_amount)
+            qr.add_data(payment_details)
+            qr.make(fit=True)
+            qr_image = qr.make_image(fill_color="black", back_color="white")
+            qr_image_path = "payment_qr.png"
+            # Add QR code to the PDF
+            pdf.image(qr_image_path, x=180, y=50, w=25, h=25)
+
+            pdf.set_font("Helvetica", size=18,style="B")
+            pdf.cell(0, 18, txt="Thanks for ordering pizza!", ln=True,align="C")
+            pdf.output("receipt.pdf")
+            resp = messagebox.showinfo("Success", "Receipt downloaded successfully!")
+            if resp:
+                receipt_window.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to download receipt due to {e}")
+
+    def preview_pdf():
+        try:
+            webbrowser.open("receipt.pdf")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to preview receipt due to {e}")
+
+    preview_button = tk.Button(receipt_window, text="Preview Receipt", command=preview_pdf)
+    preview_button.pack(side="left", pady=10, padx=50)
+
+    download_button = tk.Button(receipt_window, text="Download Receipt", command=download_pdf)
+    download_button.pack(side="left", pady=10, padx=50)
+
+    receipt_window.mainloop()
+
 
 def calculate_total():
     orders.clear()
@@ -132,6 +225,7 @@ def calculate_total():
         f"      {total_amount:.2f}"
     ))
     saving_amount = orders.copy()
+    receiptListOrders.append(saving_amount)
     # Insert the updated order items
     for i,order in enumerate(orders):
         dv.insert_row(index=i,values=order)
@@ -159,7 +253,7 @@ def confirm_quit():
         root.destroy()
 
 # Create the main window
-root = ttk.Window(themename="litera")
+root = ttk.Window(themename="solar")
 root.geometry("2100x1080+0+0")
 root.title("PizzaHouse APP")
 colors = root.style.colors
@@ -167,6 +261,28 @@ colors = root.style.colors
 # Create labels
 title_label = ttk.Label(root, text="Pizza Home App",bootstyle="danger",font=("Times New Roman", 26,'bold'))
 title_label.grid(row=0, column=2, columnspan=2, pady=10,padx=50)
+
+# Create QR code
+qr = qrcode.QRCode(
+    version=1,
+    error_correction=qrcode.constants.ERROR_CORRECT_L,
+    box_size=10,
+    border=4,
+)
+qr.add_data("https://arun1994bhardwaj.pythonanywhere.com")  # Replace with the desired URL or data
+qr.make(fit=True)
+qr_image = qr.make_image(fill_color="#000", back_color="#fff")
+qr_image = qr_image.resize((100,100))  # Adjust the size of the QR code image
+
+# Convert QR code image to Tkinter-compatible format
+qr_image_tk = ImageTk.PhotoImage(qr_image)
+
+# Create QR code label
+qr_label = ttk.Label(root, image=qr_image_tk)
+qr_label.grid(row=0, column=5, pady=10)
+
+# Update label reference to keep the image reference alive
+qr_label.image = qr_image_tk
 
 # Create dropdowns
 pizza_label = ttk.Label(root, text="Select Pizza:",font=("Times New Roman", 13))
@@ -220,7 +336,7 @@ cancel_button.grid(row=18, column=0, pady=30,columnspan=2,ipadx=50)
 order_button = ttk.Button(root, text="Make Order", command=calculate_total,style='my.TButton')
 order_button.grid(row=18, column=2, pady=30,columnspan=2,ipadx=50)
 
-generate_receipt_button = ttk.Button(root, text="Print Receipt", command=calculate_total,style='my.TButton')
+generate_receipt_button = ttk.Button(root, text="Print Receipt", command=print_receipt,style='my.TButton')
 generate_receipt_button.grid(row=18, column=4, pady=30,columnspan=2,ipadx=50)
 
 offer_var = ttk.BooleanVar()
@@ -266,8 +382,8 @@ dv = ttk.tableview.Tableview(
     rowdata=orders,
     searchable=True,
     bootstyle=INFO,
-    height=8,
-    stripecolor=(colors.light,""),
+    height=7,
+    stripecolor=(colors.dark,""),
 )
 dv.grid(row=20,column=0,columnspan=6,pady=5,padx=50,ipadx=170,ipady=5)
 dv.align_column_left() # Fit in current view
